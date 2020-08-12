@@ -1,0 +1,47 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: tekton-events
+spec:
+  serviceAccountName: tektoncd
+  triggers:
+    - name: configmap-deploy-failed
+      interceptors:
+        - cel:
+            filter: >-
+              header.match('ce-type', 'dev.tekton.event.taskrun.failed.v1') &&
+              body.taskRun.metadata.labels['triggers.tekton.dev/eventlistener'] == 'tekton-cd' &&
+              body.taskRun.metadata.labels['triggers.tekton.dev/trigger'] == 'configmaps'
+      bindings:
+      - ref: configmap-deploy-details
+      - ref: taskrun-meta
+      - ref: dashboard-url-dogfooding
+      template:
+        name: configmap-deploy-failed-slack
+    - name: github-check-start
+      interceptors:
+        - cel:
+            filter: >-
+              header.match('ce-type', 'dev.tekton.event.taskrun.started.v1') &&
+              body.taskRun.metadata.labels['triggers.tekton.dev/eventlistener'] == 'tekton-ci-webhook' &&
+              body.taskRun.metadata.labels['tekton.dev/kind'] == 'ci' &&
+              !('tekton.dev/conditionName' in body.taskRun.metadata.labels)
+      bindings:
+        - ref: tekton-ci-taskrun-cloudevent
+        - ref: tekton-ci-check-pending
+      template:
+        name: tekton-ci-github-check-update
+    - name: github-check-done
+      interceptors:
+        - cel:
+            filter: >-
+              (header.match('ce-type', 'dev.tekton.event.taskrun.successful.v1') ||
+              header.match('ce-type', 'dev.tekton.event.taskrun.failed.v1')) &&
+              body.taskRun.metadata.labels['triggers.tekton.dev/eventlistener'] == 'tekton-ci-webhook' &&
+              body.taskRun.metadata.labels['tekton.dev/kind'] == 'ci' &&
+              !('tekton.dev/conditionName' in body.taskRun.metadata.labels)
+      bindings:
+        - ref: tekton-ci-taskrun-cloudevent
+        - ref: tekton-ci-check-complete
+      template:
+        name: tekton-ci-github-check-update
